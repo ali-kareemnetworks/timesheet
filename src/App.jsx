@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './lib/AuthContext.jsx'
 import Login from './pages/Login.jsx'
@@ -32,11 +33,18 @@ export default function App() {
   const { session, profile, loading } = useAuth()
 
   // Invite and password-reset links land here with #...&type=invite (or recovery)
-  // in the URL. Catch that before any normal routing kicks in.
-  const hash = window.location.hash
-  if (hash.includes('type=invite') || hash.includes('type=recovery')) {
-    return <SetPassword />
-  }
+  // in the URL. Supabase's client auto-detects and consumes that hash on load —
+  // including stripping it from the address bar — so we capture whether it was
+  // present ONCE, synchronously, at first render. Re-reading window.location.hash
+  // on every render would lose this race once Supabase clears it.
+  const [authFlowType] = useState(() => {
+    const hash = window.location.hash
+    if (hash.includes('type=recovery')) return 'recovery'
+    if (hash.includes('type=invite')) return 'invite'
+    return null
+  })
+
+  if (authFlowType) return <SetPassword />
 
   return (
     <Routes>
