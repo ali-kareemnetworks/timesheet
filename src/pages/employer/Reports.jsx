@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
-import { formatWeekLabel, toISODate, startOfWeek, addDays } from '../../lib/dates.js'
+import { formatPeriodLabel, toISODate, startOfPeriod, prevPeriodStart } from '../../lib/dates.js'
 import { Download } from 'lucide-react'
 
 export default function Reports() {
-  const [from, setFrom] = useState(toISODate(addDays(startOfWeek(), -28)))
-  const [to, setTo] = useState(toISODate(startOfWeek()))
+  const [from, setFrom] = useState(() => prevPeriodStart(prevPeriodStart(toISODate(startOfPeriod()))))
+  const [to, setTo] = useState(() => toISODate(startOfPeriod()))
   const [employees, setEmployees] = useState([])
   const [employeeId, setEmployeeId] = useState('')
   const [rows, setRows] = useState(null)
@@ -20,8 +20,8 @@ export default function Reports() {
     let query = supabase.from('timesheets')
       .select('*, profiles!timesheets_employee_id_fkey(full_name), timesheet_entries(hours, day_date, project_codes(code, code_type, customer_name, contract_task, labor_category))')
       .eq('status', 'approved')
-      .gte('week_start_date', from)
-      .lte('week_start_date', to)
+      .gte('period_start_date', from)
+      .lte('period_start_date', to)
     if (employeeId) query = query.eq('employee_id', employeeId)
     const { data, error } = await query
     if (error) { console.error(error); setRows([]); return }
@@ -31,7 +31,7 @@ export default function Reports() {
       for (const e of ts.timesheet_entries) {
         flat.push({
           employee: ts.profiles.full_name,
-          week: formatWeekLabel(ts.week_start_date),
+          period: formatPeriodLabel(ts.period_start_date),
           day: e.day_date,
           code: e.project_codes.code,
           type: e.project_codes.code_type,
@@ -47,10 +47,10 @@ export default function Reports() {
   }
 
   function downloadCSV() {
-    const headers = ['Employee', 'Week', 'Day', 'Code', 'Type', 'Customer', 'Contract/Task', 'Labor Category', 'Hours']
+    const headers = ['Employee', 'Period', 'Day', 'Code', 'Type', 'Customer', 'Contract/Task', 'Labor Category', 'Hours']
     const lines = [headers.join(',')]
     for (const r of rows) {
-      lines.push([r.employee, r.week, r.day, r.code, r.type, r.customer, r.contract, r.laborCategory, r.hours]
+      lines.push([r.employee, r.period, r.day, r.code, r.type, r.customer, r.contract, r.laborCategory, r.hours]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
@@ -70,11 +70,11 @@ export default function Reports() {
 
       <div className="card p-4 grid sm:grid-cols-4 gap-3 items-end">
         <div>
-          <label className="label">From (week of)</label>
+          <label className="label">From (period starting)</label>
           <input type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>
         <div>
-          <label className="label">To (week of)</label>
+          <label className="label">To (period starting)</label>
           <input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
         <div>
@@ -125,3 +125,4 @@ export default function Reports() {
     </div>
   )
 }
+

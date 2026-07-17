@@ -1,32 +1,57 @@
-// All weeks run Monday -> Sunday, stored as ISO date strings (YYYY-MM-DD).
+// Timesheets run in semi-monthly periods: the 1st–15th, and the 16th–end
+// of month. All periods are identified by their start date (always the
+// 1st or the 16th), stored as an ISO date string (YYYY-MM-DD).
 
 export function toISODate(d) {
   return d.toISOString().slice(0, 10)
 }
 
-export function startOfWeek(date = new Date()) {
+export function startOfPeriod(date = new Date()) {
   const d = new Date(date)
-  const day = d.getDay() // 0=Sun..6=Sat
-  const diff = day === 0 ? -6 : 1 - day
-  d.setDate(d.getDate() + diff)
-  d.setHours(0, 0, 0, 0)
-  return d
+  const day = d.getDate()
+  return new Date(d.getFullYear(), d.getMonth(), day <= 15 ? 1 : 16)
 }
 
-export function addDays(date, n) {
-  const d = new Date(date)
-  d.setDate(d.getDate() + n)
-  return d
+export function endOfPeriod(periodStartISO) {
+  const start = new Date(periodStartISO + 'T00:00:00')
+  if (start.getDate() === 1) {
+    return toISODate(new Date(start.getFullYear(), start.getMonth(), 15))
+  }
+  // Day 0 of next month = last day of this month.
+  return toISODate(new Date(start.getFullYear(), start.getMonth() + 1, 0))
 }
 
-export function weekDays(weekStartISO) {
-  const start = new Date(weekStartISO + 'T00:00:00')
-  return Array.from({ length: 7 }, (_, i) => toISODate(addDays(start, i)))
+export function periodDays(periodStartISO) {
+  const start = new Date(periodStartISO + 'T00:00:00')
+  const end = new Date(endOfPeriod(periodStartISO) + 'T00:00:00')
+  const days = []
+  const cur = new Date(start)
+  while (cur <= end) {
+    days.push(toISODate(cur))
+    cur.setDate(cur.getDate() + 1)
+  }
+  return days
 }
 
-export function formatWeekLabel(weekStartISO) {
-  const start = new Date(weekStartISO + 'T00:00:00')
-  const end = addDays(start, 6)
+export function nextPeriodStart(periodStartISO) {
+  const start = new Date(periodStartISO + 'T00:00:00')
+  if (start.getDate() === 1) {
+    return toISODate(new Date(start.getFullYear(), start.getMonth(), 16))
+  }
+  return toISODate(new Date(start.getFullYear(), start.getMonth() + 1, 1))
+}
+
+export function prevPeriodStart(periodStartISO) {
+  const start = new Date(periodStartISO + 'T00:00:00')
+  if (start.getDate() === 16) {
+    return toISODate(new Date(start.getFullYear(), start.getMonth(), 1))
+  }
+  return toISODate(new Date(start.getFullYear(), start.getMonth() - 1, 16))
+}
+
+export function formatPeriodLabel(periodStartISO) {
+  const start = new Date(periodStartISO + 'T00:00:00')
+  const end = new Date(endOfPeriod(periodStartISO) + 'T00:00:00')
   const opts = { month: 'short', day: 'numeric' }
   return `${start.toLocaleDateString(undefined, opts)} – ${end.toLocaleDateString(undefined, opts)}, ${end.getFullYear()}`
 }

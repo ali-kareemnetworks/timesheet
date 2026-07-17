@@ -11,7 +11,7 @@ import EmployerEmployees from './pages/employer/Employees.jsx'
 import EmployerProjectCodes from './pages/employer/ProjectCodes.jsx'
 import EmployerReports from './pages/employer/Reports.jsx'
 
-import EmployeeWeek from './pages/employee/Week.jsx'
+import EmployeePeriod from './pages/employee/Period.jsx'
 import EmployeeHistory from './pages/employee/History.jsx'
 import EmployeePTO from './pages/employee/PTO.jsx'
 
@@ -59,7 +59,7 @@ export default function App() {
       </Route>
 
       <Route path="/employee" element={<Protected role="employee"><Layout /></Protected>}>
-        <Route index element={<EmployeeWeek />} />
+        <Route index element={<EmployeePeriod />} />
         <Route path="history" element={<EmployeeHistory />} />
         <Route path="pto" element={<EmployeePTO />} />
       </Route>

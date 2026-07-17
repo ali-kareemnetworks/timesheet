@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
 import { useAuth } from '../../lib/AuthContext.jsx'
-import { startOfWeek, addDays, toISODate, weekDays, formatWeekLabel, shortDayLabel } from '../../lib/dates.js'
+import { startOfPeriod, prevPeriodStart, nextPeriodStart, toISODate, periodDays, formatPeriodLabel, shortDayLabel } from '../../lib/dates.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import { ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react'
 
-export default function Week() {
+export default function Period() {
   const { profile } = useAuth()
-  const [weekStart, setWeekStart] = useState(toISODate(startOfWeek()))
+  const [periodStart, setPeriodStart] = useState(toISODate(startOfPeriod()))
   const [codes, setCodes] = useState([])
   const [timesheet, setTimesheet] = useState(null) // null = not created yet
   const [hours, setHours] = useState({}) // key: `${codeId}|${day}` -> string
@@ -15,10 +15,10 @@ export default function Week() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
 
-  const days = useMemo(() => weekDays(weekStart), [weekStart])
+  const days = useMemo(() => periodDays(periodStart), [periodStart])
   const editable = !timesheet || timesheet.status === 'draft' || timesheet.status === 'rejected'
 
-  useEffect(() => { load() }, [weekStart])
+  useEffect(() => { load() }, [periodStart])
 
   async function load() {
     setLoading(true)
@@ -27,7 +27,7 @@ export default function Week() {
     setCodes(codeData || [])
 
     const { data: ts } = await supabase.from('timesheets').select('*')
-      .eq('employee_id', profile.id).eq('week_start_date', weekStart).maybeSingle()
+      .eq('employee_id', profile.id).eq('period_start_date', periodStart).maybeSingle()
     setTimesheet(ts || null)
 
     const h = {}
@@ -50,12 +50,12 @@ export default function Week() {
   function codeTotal(codeId) {
     return days.reduce((sum, d) => sum + (parseFloat(hours[`${codeId}|${d}`]) || 0), 0)
   }
-  const weekTotal = codes.reduce((sum, c) => sum + codeTotal(c.id), 0)
+  const periodTotal = codes.reduce((sum, c) => sum + codeTotal(c.id), 0)
 
   async function ensureTimesheet() {
     if (timesheet) return timesheet
     const { data, error } = await supabase.from('timesheets')
-      .insert({ employee_id: profile.id, week_start_date: weekStart, status: 'draft' })
+      .insert({ employee_id: profile.id, period_start_date: periodStart, status: 'draft' })
       .select().single()
     if (error) throw error
     setTimesheet(data)
@@ -70,7 +70,6 @@ export default function Week() {
         if (v > 0) rows.push({ timesheet_id: ts.id, project_code_id: c.id, day_date: d, hours: v })
       }
     }
-    // Replace all entries for this timesheet
     await supabase.from('timesheet_entries').delete().eq('timesheet_id', ts.id)
     if (rows.length) {
       const { error } = await supabase.from('timesheet_entries').insert(rows)
@@ -111,19 +110,21 @@ export default function Week() {
 
   if (loading) return <p className="text-slate font-mono text-sm">Loading…</p>
 
+  const tableMinWidth = Math.max(640, 220 + days.length * 64)
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold text-navy">My Week</h1>
+        <h1 className="font-display text-2xl font-semibold text-navy">My Timesheet</h1>
         {timesheet && <StatusBadge status={timesheet.status} />}
       </div>
 
       <div className="flex items-center justify-between card px-3 py-2">
-        <button className="p-2" onClick={() => setWeekStart(toISODate(addDays(new Date(weekStart), -7)))} aria-label="Previous week">
+        <button className="p-2" onClick={() => setPeriodStart(prevPeriodStart(periodStart))} aria-label="Previous period">
           <ChevronLeft size={18} />
         </button>
-        <span className="font-mono text-sm font-medium">{formatWeekLabel(weekStart)}</span>
-        <button className="p-2" onClick={() => setWeekStart(toISODate(addDays(new Date(weekStart), 7)))} aria-label="Next week">
+        <span className="font-mono text-sm font-medium">{formatPeriodLabel(periodStart)}</span>
+        <button className="p-2" onClick={() => setPeriodStart(nextPeriodStart(periodStart))} aria-label="Next period">
           <ChevronRight size={18} />
         </button>
       </div>
@@ -138,9 +139,8 @@ export default function Week() {
         </div>
       )}
 
-      {/* Mobile: stacked day cards. Desktop: grid table. */}
       <div className="card overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px]">
+        <table className="w-full text-sm" style={{ minWidth: `${tableMinWidth}px` }}>
           <thead>
             <tr className="border-b border-line">
               <th className="text-left font-semibold text-slate px-3 py-2.5 sticky left-0 bg-white">Code</th>
@@ -179,7 +179,7 @@ export default function Week() {
               {days.map((d) => (
                 <td key={d} className="px-2 py-2.5 text-center font-mono text-xs text-slate">{dayTotal(d) || ''}</td>
               ))}
-              <td className="px-3 py-2.5 text-center font-mono font-semibold text-navy">{weekTotal}</td>
+              <td className="px-3 py-2.5 text-center font-mono font-semibold text-navy">{periodTotal}</td>
             </tr>
           </tfoot>
         </table>

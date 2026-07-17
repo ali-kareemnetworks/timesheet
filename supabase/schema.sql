@@ -30,11 +30,21 @@ create table public.project_codes (
   created_at timestamptz not null default now()
 );
 
--- ---------- TIMESHEETS (one per employee per week) ----------
+-- ---------- TIMESHEETS (one per employee per semi-monthly period) ----------
+-- Periods always run 1st-15th, or 16th-end of month.
 create table public.timesheets (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references public.profiles(id) on delete cascade,
-  week_start_date date not null,       -- always a Monday
+  period_start_date date not null,     -- always the 1st or the 16th of a month
+  period_end_date date generated always as (
+    case
+      when extract(day from period_start_date)::int = 1
+        then (period_start_date + 14)::date
+      else
+        (make_date(extract(year from period_start_date)::int, extract(month from period_start_date)::int, 1)
+          + interval '1 month' - interval '1 day')::date
+    end
+  ) stored,
   status text not null default 'draft'
     check (status in ('draft','submitted','approved','rejected')),
   rejection_reason text,
@@ -42,7 +52,8 @@ create table public.timesheets (
   reviewed_at timestamptz,
   reviewed_by uuid references public.profiles(id),
   created_at timestamptz not null default now(),
-  unique (employee_id, week_start_date)
+  constraint valid_period_start check (extract(day from period_start_date)::int in (1, 16)),
+  unique (employee_id, period_start_date)
 );
 
 -- ---------- TIMESHEET ENTRIES (hours per project code per day) ----------
@@ -91,11 +102,11 @@ begin
     insert into public.pto_ledger (employee_id, entry_date, hours, entry_type, timesheet_id, note)
     select
       new.employee_id,
-      new.week_start_date,
+      new.period_start_date,
       -1 * sum(te.hours),
       'usage',
       new.id,
-      'Vacation used, week of ' || new.week_start_date
+      'Vacation used, period starting ' || new.period_start_date
     from public.timesheet_entries te
     join public.project_codes pc on pc.id = te.project_code_id
     where te.timesheet_id = new.id and pc.code_type = 'VACATION'

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
 import { useAuth } from '../../lib/AuthContext.jsx'
-import { formatWeekLabel } from '../../lib/dates.js'
+import { formatPeriodLabel } from '../../lib/dates.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 
 export default function History() {
@@ -12,7 +12,7 @@ export default function History() {
 
   async function load() {
     const { data: sheets } = await supabase.from('timesheets').select('*')
-      .eq('employee_id', profile.id).order('week_start_date', { ascending: false })
+      .eq('employee_id', profile.id).order('period_start_date', { ascending: false })
 
     const withTotals = await Promise.all((sheets || []).map(async (ts) => {
       const { data: entries } = await supabase.from('timesheet_entries').select('hours').eq('timesheet_id', ts.id)
@@ -32,7 +32,7 @@ export default function History() {
         {rows.map((ts) => (
           <div key={ts.id} className="card p-4 flex items-center justify-between">
             <div>
-              <p className="font-medium text-sm">{formatWeekLabel(ts.week_start_date)}</p>
+              <p className="font-medium text-sm">{formatPeriodLabel(ts.period_start_date)}</p>
               <p className="text-xs text-slate font-mono mt-0.5">{ts.total} hrs</p>
               {ts.status === 'rejected' && ts.rejection_reason && (
                 <p className="text-xs text-rust mt-1">{ts.rejection_reason}</p>

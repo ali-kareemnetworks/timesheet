@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
 import { useAuth } from '../../lib/AuthContext.jsx'
-import { formatWeekLabel } from '../../lib/dates.js'
+import { formatPeriodLabel } from '../../lib/dates.js'
 import { notifyRejection } from '../../lib/notify.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import { Check, X } from 'lucide-react'
@@ -52,7 +52,7 @@ export default function Review() {
     }).eq('id', ts.id)
     await notifyRejection({
       toEmail: ts.profiles.email, toName: ts.profiles.full_name,
-      weekStart: formatWeekLabel(ts.week_start_date), reason,
+      weekStart: formatPeriodLabel(ts.period_start_date), reason,
     })
     setRejecting(null)
     setReason('')
@@ -76,7 +76,7 @@ export default function Review() {
             <div className="flex items-start justify-between gap-3 cursor-pointer" onClick={() => expand(ts)}>
               <div>
                 <p className="font-medium text-sm">{ts.profiles.full_name}</p>
-                <p className="text-xs text-slate">{formatWeekLabel(ts.week_start_date)}</p>
+                <p className="text-xs text-slate">{formatPeriodLabel(ts.period_start_date)}</p>
               </div>
               <StatusBadge status={ts.status} />
             </div>

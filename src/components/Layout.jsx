@@ -14,7 +14,7 @@ const EMPLOYER_NAV = [
 ]
 
 const EMPLOYEE_NAV = [
-  { to: '/employee', label: 'My Week', icon: CalendarDays, end: true },
+  { to: '/employee', label: 'Timesheet', icon: CalendarDays, end: true },
   { to: '/employee/history', label: 'History', icon: History },
   { to: '/employee/pto', label: 'PTO', icon: PalmtreeIcon },
 ]
