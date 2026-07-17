@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html { -webkit-tap-highlight-color: transparent; }
+
+body {
+  background-image:
+    linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px);
+  background-size: 100% 2.2rem;
+}
+
+::selection { background: #B8863B33; }
+
+/* Focus visibility for keyboard users */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #B8863B;
+  outline-offset: 2px;
+}
+
+@layer components {
+  .card {
+    @apply bg-white border border-line rounded-lg shadow-sm;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-primary { @apply btn bg-navy text-paper hover:bg-[#26374a]; }
+  .btn-secondary { @apply btn bg-white text-navy border border-line hover:bg-paper; }
+  .btn-danger { @apply btn bg-rust text-white hover:bg-[#9c3e33]; }
+  .btn-approve { @apply btn bg-leaf text-white hover:bg-[#356b4a]; }
+
+  .input {
+    @apply w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm font-body focus:border-gold;
+  }
+  .label {
+    @apply text-xs font-semibold uppercase tracking-wide text-slate mb-1 block;
+  }
+
+  /* Signature element: rubber-stamp status badge */
+  .stamp {
+    @apply inline-block font-mono text-xs font-semibold uppercase tracking-widest border-2 rounded px-2.5 py-1 -rotate-2 select-none;
+  }
+  .stamp-approved { @apply stamp text-leaf border-leaf; }
+  .stamp-rejected { @apply stamp text-rust border-rust; }
+  .stamp-submitted { @apply stamp text-gold border-gold; }
+  .stamp-draft { @apply stamp text-slate border-slate; }
+
+  .hour-cell {
+    @apply font-mono text-center w-full rounded border border-line bg-white py-2 text-sm;
+  }
+}
