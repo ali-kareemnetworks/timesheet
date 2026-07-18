@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext.jsx'
+import { useCompanyLogo } from '../lib/branding.js'
 import { ClipboardList } from 'lucide-react'
 
 export default function Login() {
   const { session, profile, signIn, loading } = useAuth()
+  const { logoUrl } = useCompanyLogo()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -27,9 +29,13 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 rounded-lg bg-navy text-paper grid place-items-center mb-3">
-            <ClipboardList size={24} />
-          </div>
+          {logoUrl ? (
+            <img src={logoUrl} alt="Company logo" className="max-h-16 max-w-[220px] object-contain mb-3" />
+          ) : (
+            <div className="w-12 h-12 rounded-lg bg-navy text-paper grid place-items-center mb-3">
+              <ClipboardList size={24} />
+            </div>
+          )}
           <h1 className="font-display text-2xl font-semibold text-navy">Timekeep</h1>
           <p className="text-slate text-sm mt-1">Sign in to your account</p>
         </div>

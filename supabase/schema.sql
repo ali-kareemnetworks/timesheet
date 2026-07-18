@@ -210,3 +210,39 @@ insert into public.project_codes (code, customer_name, contract_task, labor_cate
 --   insert into public.profiles (id, role, full_name, email, yearly_vacation_hours)
 --   select id, 'employer', 'Admin', email, 0 from auth.users where email = 'you@example.com';
 -- =====================================================================
+
+-- =====================================================================
+-- COMPANY BRANDING: logo storage + settings row
+-- =====================================================================
+insert into storage.buckets (id, name, public)
+values ('branding', 'branding', true)
+on conflict (id) do nothing;
+
+create policy "employer uploads branding assets"
+  on storage.objects for insert
+  with check (bucket_id = 'branding' and public.is_employer());
+
+create policy "employer updates branding assets"
+  on storage.objects for update
+  using (bucket_id = 'branding' and public.is_employer())
+  with check (bucket_id = 'branding' and public.is_employer());
+
+create policy "employer deletes branding assets"
+  on storage.objects for delete
+  using (bucket_id = 'branding' and public.is_employer());
+
+create table public.company_settings (
+  id int primary key default 1,
+  logo_url text,
+  updated_at timestamptz not null default now(),
+  constraint singleton check (id = 1)
+);
+insert into public.company_settings (id) values (1);
+
+alter table public.company_settings enable row level security;
+
+create policy "anyone can read company settings" on public.company_settings
+  for select using (true);
+
+create policy "employer manages company settings" on public.company_settings
+  for all using (public.is_employer()) with check (public.is_employer());
