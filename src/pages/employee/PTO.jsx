@@ -25,10 +25,10 @@ export default function PTO() {
       <div className="card p-6 text-center">
         <p className="text-xs uppercase tracking-wide text-slate font-semibold">Current balance</p>
         <p className={`font-mono text-4xl font-semibold mt-2 ${negative ? 'text-rust' : 'text-navy'}`}>
-          {balance} <span className="text-lg font-normal">hrs</span>
+          {balance.toFixed(2)} <span className="text-lg font-normal">hrs</span>
         </p>
         <p className="text-xs text-slate mt-2">
-          Yearly allotment: <span className="font-mono">{profile.yearly_vacation_hours}</span> hrs
+          Yearly allotment: <span className="font-mono">{Number(profile.yearly_vacation_hours).toFixed(2)}</span> hrs
         </p>
         {negative && (
           <p className="text-xs text-rust mt-3 max-w-xs mx-auto">
@@ -43,17 +43,20 @@ export default function PTO() {
         {ledger === null && <p className="text-slate text-sm">Loading…</p>}
         {ledger?.length === 0 && <p className="text-slate text-sm">No PTO activity yet.</p>}
         <div className="space-y-2">
-          {ledger?.map((r) => (
-            <div key={r.id} className="card p-3 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium capitalize">{r.entry_type}</p>
-                <p className="text-xs text-slate">{r.entry_date} {r.note ? `— ${r.note}` : ''}</p>
+          {ledger?.map((r) => {
+            const hrs = Number(r.hours)
+            return (
+              <div key={r.id} className="card p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium capitalize">{r.entry_type}</p>
+                  <p className="text-xs text-slate">{r.entry_date} {r.note ? `— ${r.note}` : ''}</p>
+                </div>
+                <span className={`font-mono text-sm font-semibold ${hrs < 0 ? 'text-rust' : 'text-leaf'}`}>
+                  {hrs > 0 ? '+' : ''}{hrs.toFixed(2)}
+                </span>
               </div>
-              <span className={`font-mono text-sm font-semibold ${r.hours < 0 ? 'text-rust' : 'text-leaf'}`}>
-                {r.hours > 0 ? '+' : ''}{r.hours}
-              </span>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>

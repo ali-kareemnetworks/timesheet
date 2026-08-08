@@ -31,8 +31,19 @@ export default function Employees() {
     setError('')
     const { data, error } = await supabase.functions.invoke('create-employee', { body: form })
     setBusy(false)
-    if (error || data?.error) {
-      setError(data?.error || error.message)
+    if (error) {
+      let msg = error.message
+      try {
+        if (error.context && typeof error.context.json === 'function') {
+          const body = await error.context.json()
+          if (body?.error) msg = body.error
+        }
+      } catch { /* fall back to the generic message */ }
+      setError(msg)
+      return
+    }
+    if (data?.error) {
+      setError(data.error)
       return
     }
     setForm(BLANK)
@@ -128,7 +139,7 @@ export default function Employees() {
                 <p className="text-xs text-slate">{emp.home_address}</p>
               </div>
               <div className="text-right shrink-0">
-                <p className="font-mono text-sm font-semibold">{balances[emp.id] ?? 0} hrs</p>
+                <p className="font-mono text-sm font-semibold">{Number(balances[emp.id] ?? 0).toFixed(2)} hrs</p>
                 <p className="text-[11px] text-slate">PTO balance</p>
               </div>
             </div>
