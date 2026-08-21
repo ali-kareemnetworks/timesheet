@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
 import { UserPlus, X } from 'lucide-react'
 
-const BLANK = { full_name: '', email: '', phone: '', home_address: '', position: '', yearly_vacation_hours: 80 }
+const BLANK = { full_name: '', email: '', phone: '', home_address: '', position: '', yearly_vacation_hours: 80, start_date: '' }
 
 export default function Employees() {
   const [employees, setEmployees] = useState(null)
@@ -61,6 +61,11 @@ export default function Employees() {
     load()
   }
 
+  async function updateStartDate(emp, value) {
+    await supabase.from('profiles').update({ start_date: value || null }).eq('id', emp.id)
+    load()
+  }
+
   async function submitGrant(emp) {
     const hrs = parseFloat(grantAmount)
     if (!hrs) return
@@ -114,6 +119,11 @@ export default function Employees() {
                 onChange={(e) => setForm({ ...form, home_address: e.target.value })} />
             </div>
             <div>
+              <label className="label">Start date</label>
+              <input type="date" className="input" value={form.start_date}
+                onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+            </div>
+            <div>
               <label className="label">Yearly vacation hours</label>
               <input type="number" className="input" value={form.yearly_vacation_hours}
                 onChange={(e) => setForm({ ...form, yearly_vacation_hours: Number(e.target.value) })} />
@@ -145,6 +155,13 @@ export default function Employees() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-line">
+              <label className="text-xs text-slate flex items-center gap-1.5">
+                Start date
+                <input type="date" className="input !py-1 !w-36 text-xs"
+                  defaultValue={emp.start_date || ''}
+                  onBlur={(e) => updateStartDate(emp, e.target.value)} />
+              </label>
+
               <label className="text-xs text-slate flex items-center gap-1.5">
                 Allotment/yr
                 <input type="number" className="input !py-1 !w-20 text-xs"
