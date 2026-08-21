@@ -23,8 +23,17 @@ export default function Period() {
   async function load() {
     setLoading(true)
     setMessage('')
-    const { data: codeData } = await supabase.from('project_codes').select('*').eq('active', true).order('code')
-    setCodes(codeData || [])
+
+    // Only the project codes this employee has been assigned to.
+    const { data: assigned } = await supabase
+      .from('employee_project_codes')
+      .select('project_codes(*)')
+      .eq('employee_id', profile.id)
+    const codeData = (assigned || [])
+      .map((a) => a.project_codes)
+      .filter((c) => c && c.active)
+      .sort((a, b) => a.code.localeCompare(b.code))
+    setCodes(codeData)
 
     const { data: ts } = await supabase.from('timesheets').select('*')
       .eq('employee_id', profile.id).eq('period_start_date', periodStart).maybeSingle()
@@ -139,62 +148,71 @@ export default function Period() {
         </div>
       )}
 
-      <div className="card overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: `${tableMinWidth}px` }}>
-          <thead>
-            <tr className="border-b border-line">
-              <th className="text-left font-semibold text-slate px-3 py-2.5 sticky left-0 bg-white">Code</th>
-              {days.map((d) => (
-                <th key={d} className="text-center font-semibold text-slate px-2 py-2.5 font-mono text-xs">{shortDayLabel(d)}</th>
-              ))}
-              <th className="text-center font-semibold text-slate px-3 py-2.5">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {codes.map((c) => (
-              <tr key={c.id} className="border-b border-line last:border-0">
-                <td className="px-3 py-2 sticky left-0 bg-white">
-                  <span className="font-mono text-xs font-semibold text-navy">{c.code}</span>
-                  {c.customer_name && c.code_type === 'CLIENT_SITE' && (
-                    <div className="text-[11px] text-slate">{c.customer_name}</div>
-                  )}
-                </td>
+      {codes.length === 0 ? (
+        <div className="card p-6 text-center">
+          <p className="text-sm text-slate">
+            You haven't been assigned any project codes yet. Ask your employer to assign one from the Project Codes page.
+          </p>
+        </div>
+      ) : (
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: `${tableMinWidth}px` }}>
+            <thead>
+              <tr className="border-b border-line">
+                <th className="text-left font-semibold text-slate px-3 py-2.5 sticky left-0 bg-white">Code</th>
                 {days.map((d) => (
-                  <td key={d} className="px-1.5 py-1.5">
-                    <input
-                      type="text" inputMode="decimal" className="hour-cell" placeholder="0"
-                      disabled={!editable}
-                      value={hours[`${c.id}|${d}`] || ''}
-                      onChange={(e) => setCell(c.id, d, e.target.value)}
-                    />
-                  </td>
+                  <th key={d} className="text-center font-semibold text-slate px-2 py-2.5 font-mono text-xs">{shortDayLabel(d)}</th>
                 ))}
-                <td className="px-3 py-2 text-center font-mono text-sm">{codeTotal(c.id) || ''}</td>
+                <th className="text-center font-semibold text-slate px-3 py-2.5">Total</th>
               </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-navy/20">
-              <td className="px-3 py-2.5 font-semibold sticky left-0 bg-white">Daily total</td>
-              {days.map((d) => (
-                <td key={d} className="px-2 py-2.5 text-center font-mono text-xs text-slate">{dayTotal(d) || ''}</td>
+            </thead>
+            <tbody>
+              {codes.map((c) => (
+                <tr key={c.id} className="border-b border-line last:border-0">
+                  <td className="px-3 py-2 sticky left-0 bg-white">
+                    <span className="font-mono text-xs font-semibold text-navy">{c.code}</span>
+                    {c.customer_name && c.code_type === 'CLIENT_SITE' && (
+                      <div className="text-[11px] text-slate">{c.customer_name}</div>
+                    )}
+                  </td>
+                  {days.map((d) => (
+                    <td key={d} className="px-1.5 py-1.5">
+                      <input
+                        type="text" inputMode="decimal" className="hour-cell" placeholder="0"
+                        disabled={!editable}
+                        value={hours[`${c.id}|${d}`] || ''}
+                        onChange={(e) => setCell(c.id, d, e.target.value)}
+                      />
+                    </td>
+                  ))}
+                  <td className="px-3 py-2 text-center font-mono text-sm">{codeTotal(c.id) || ''}</td>
+                </tr>
               ))}
-              <td className="px-3 py-2.5 text-center font-mono font-semibold text-navy">{periodTotal}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-navy/20">
+                <td className="px-3 py-2.5 font-semibold sticky left-0 bg-white">Daily total</td>
+                {days.map((d) => (
+                  <td key={d} className="px-2 py-2.5 text-center font-mono text-xs text-slate">{dayTotal(d) || ''}</td>
+                ))}
+                <td className="px-3 py-2.5 text-center font-mono font-semibold text-navy">{periodTotal}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
 
       {message && <p className="text-sm text-slate">{message}</p>}
 
-      {editable ? (
+      {editable && codes.length > 0 && (
         <div className="flex gap-3">
           <button className="btn-secondary flex-1" disabled={saving} onClick={handleSaveDraft}>Save draft</button>
           <button className="btn-primary flex-1" disabled={saving} onClick={handleSubmit}>
             {timesheet?.status === 'rejected' ? 'Resubmit' : 'Submit for approval'}
           </button>
         </div>
-      ) : (
+      )}
+      {!editable && (
         <p className="text-sm text-slate">
           This timesheet is <strong>{timesheet.status}</strong> and can no longer be edited.
         </p>

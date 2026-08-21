@@ -1,22 +1,36 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
 
 const BLANK = { code: '', customer_name: '', contract_task: '', labor_category: '', code_type: 'CLIENT_SITE' }
 const TYPES = ['CLIENT_SITE', 'HOLIDAY', 'VACATION', 'INTERNAL', 'OTHER']
 
 export default function ProjectCodes() {
   const [codes, setCodes] = useState(null)
+  const [employees, setEmployees] = useState([])
+  const [assignments, setAssignments] = useState({}) // codeId -> Set of employeeIds
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(BLANK)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [expanded, setExpanded] = useState(null)
 
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data } = await supabase.from('project_codes').select('*').order('code_type').order('code')
-    setCodes(data || [])
+    const [{ data: codeData }, { data: empData }, { data: assignData }] = await Promise.all([
+      supabase.from('project_codes').select('*').order('code_type').order('code'),
+      supabase.from('profiles').select('id, full_name').eq('role', 'employee').order('full_name'),
+      supabase.from('employee_project_codes').select('employee_id, project_code_id'),
+    ])
+    setCodes(codeData || [])
+    setEmployees(empData || [])
+    const map = {}
+    for (const a of assignData || []) {
+      if (!map[a.project_code_id]) map[a.project_code_id] = new Set()
+      map[a.project_code_id].add(a.employee_id)
+    }
+    setAssignments(map)
   }
 
   async function handleAdd(e) {
@@ -34,6 +48,23 @@ export default function ProjectCodes() {
   async function toggleActive(c) {
     await supabase.from('project_codes').update({ active: !c.active }).eq('id', c.id)
     load()
+  }
+
+  async function toggleAssignment(codeId, employeeId, isAssigned) {
+    // Optimistic local update so checkboxes feel instant.
+    setAssignments((prev) => {
+      const next = { ...prev, [codeId]: new Set(prev[codeId] || []) }
+      if (isAssigned) next[codeId].delete(employeeId)
+      else next[codeId].add(employeeId)
+      return next
+    })
+
+    if (isAssigned) {
+      await supabase.from('employee_project_codes').delete()
+        .eq('employee_id', employeeId).eq('project_code_id', codeId)
+    } else {
+      await supabase.from('employee_project_codes').insert({ employee_id: employeeId, project_code_id: codeId })
+    }
   }
 
   return (
@@ -79,24 +110,68 @@ export default function ProjectCodes() {
           </div>
           {error && <p className="text-rust text-sm">{error}</p>}
           <button className="btn-primary w-full" disabled={busy}>{busy ? 'Saving…' : 'Save code'}</button>
+          <p className="text-xs text-slate">You can assign employees to this code right after saving it, below.</p>
         </form>
       )}
 
       <div className="space-y-2">
         {codes === null && <p className="text-slate text-sm">Loading…</p>}
-        {codes?.map((c) => (
-          <div key={c.id} className="card p-4 flex items-start justify-between gap-3">
-            <div>
-              <p className="font-mono text-sm font-semibold text-navy">{c.code} <span className="text-[11px] font-body font-normal text-slate">· {c.code_type}</span></p>
-              {c.customer_name && <p className="text-xs text-slate mt-1">Customer: {c.customer_name}</p>}
-              {c.contract_task && <p className="text-xs text-slate">Contract/task: {c.contract_task}</p>}
-              {c.labor_category && <p className="text-xs text-slate">Labor category: {c.labor_category}</p>}
+        {codes?.map((c) => {
+          const assignedSet = assignments[c.id] || new Set()
+          const isOpen = expanded === c.id
+          const isUniversal = c.code_type === 'HOLIDAY' || c.code_type === 'VACATION'
+          return (
+            <div key={c.id} className="card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-mono text-sm font-semibold text-navy">{c.code} <span className="text-[11px] font-body font-normal text-slate">· {c.code_type}</span></p>
+                  {c.customer_name && <p className="text-xs text-slate mt-1">Customer: {c.customer_name}</p>}
+                  {c.contract_task && <p className="text-xs text-slate">Contract/task: {c.contract_task}</p>}
+                  {c.labor_category && <p className="text-xs text-slate">Labor category: {c.labor_category}</p>}
+                </div>
+                <button className="text-xs text-slate underline shrink-0" onClick={() => toggleActive(c)}>
+                  {c.active ? 'Deactivate' : 'Reactivate'}
+                </button>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-line">
+                <button
+                  className="flex items-center gap-1.5 text-xs font-semibold text-navy"
+                  onClick={() => setExpanded(isOpen ? null : c.id)}
+                >
+                  {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  Assign employees
+                  <span className="text-slate font-normal">
+                    ({isUniversal ? 'everyone — HOLIDAY/VACATION are automatic' : `${assignedSet.size} assigned`})
+                  </span>
+                </button>
+
+                {isOpen && !isUniversal && (
+                  <div className="mt-3 grid sm:grid-cols-2 gap-2">
+                    {employees.length === 0 && <p className="text-xs text-slate">No employees yet.</p>}
+                    {employees.map((emp) => {
+                      const checked = assignedSet.has(emp.id)
+                      return (
+                        <label key={emp.id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox" checked={checked}
+                            onChange={() => toggleAssignment(c.id, emp.id, checked)}
+                          />
+                          {emp.full_name}
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+                {isOpen && isUniversal && (
+                  <p className="text-xs text-slate mt-2">
+                    HOLIDAY and VACATION are given to every employee automatically and can't be unassigned individually.
+                  </p>
+                )}
+              </div>
             </div>
-            <button className="text-xs text-slate underline shrink-0" onClick={() => toggleActive(c)}>
-              {c.active ? 'Deactivate' : 'Reactivate'}
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
