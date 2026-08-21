@@ -11,6 +11,7 @@ export default function Review() {
   const [sheets, setSheets] = useState(null)
   const [expanded, setExpanded] = useState(null)
   const [entries, setEntries] = useState({})
+  const [adjustments, setAdjustments] = useState({})
   const [rejecting, setRejecting] = useState(null)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -32,6 +33,11 @@ export default function Review() {
       const { data } = await supabase.from('timesheet_entries')
         .select('*, project_codes(code, code_type)').eq('timesheet_id', ts.id)
       setEntries((prev) => ({ ...prev, [ts.id]: data || [] }))
+    }
+    if (!adjustments[ts.id]) {
+      const { data } = await supabase.from('timesheet_adjustments')
+        .select('*, project_codes(code)').eq('timesheet_id', ts.id).order('changed_at')
+      setAdjustments((prev) => ({ ...prev, [ts.id]: data || [] }))
     }
   }
 
@@ -98,6 +104,26 @@ export default function Review() {
                 <div className="flex justify-between text-sm font-semibold pt-1 border-t border-line">
                   <span>Total</span><span className="font-mono">{total(ts)} hrs</span>
                 </div>
+
+                {adjustments[ts.id]?.length > 0 && (
+                  <div className="pt-2 border-t border-line">
+                    <p className="text-xs font-semibold text-slate uppercase tracking-wide mb-2">Change log</p>
+                    <div className="space-y-2">
+                      {adjustments[ts.id].map((a) => (
+                        <div key={a.id} className="bg-paper rounded-md p-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-mono font-semibold text-navy">
+                              {a.project_codes?.code} · {a.day_date}
+                            </span>
+                            <span className="text-xs font-mono text-slate">{a.previous_hours} → {a.new_hours}</span>
+                          </div>
+                          <p className="text-xs text-slate mt-1">{a.justification}</p>
+                          <p className="text-[10px] text-slate/70 mt-1">{new Date(a.changed_at).toLocaleString()}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {rejecting === ts.id ? (
                   <div className="space-y-2 pt-2">
