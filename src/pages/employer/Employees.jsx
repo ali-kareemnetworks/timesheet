@@ -7,6 +7,7 @@ const BLANK = { full_name: '', email: '', phone: '', home_address: '', position:
 export default function Employees() {
   const [employees, setEmployees] = useState(null)
   const [balances, setBalances] = useState({})
+  const [earliestTimesheet, setEarliestTimesheet] = useState({}) // employeeId -> earliest period_start_date
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(BLANK)
   const [busy, setBusy] = useState(false)
@@ -23,6 +24,17 @@ export default function Employees() {
     const map = {}
     for (const b of bal || []) map[b.employee_id] = b.balance
     setBalances(map)
+
+    // Track each employee's earliest timesheet so we know whether changing
+    // their start date could contradict something they've already submitted.
+    const { data: sheets } = await supabase.from('timesheets').select('employee_id, period_start_date')
+    const earliest = {}
+    for (const s of sheets || []) {
+      if (!earliest[s.employee_id] || s.period_start_date < earliest[s.employee_id]) {
+        earliest[s.employee_id] = s.period_start_date
+      }
+    }
+    setEarliestTimesheet(earliest)
   }
 
   async function handleAdd(e) {
@@ -61,7 +73,29 @@ export default function Employees() {
     load()
   }
 
-  async function updateStartDate(emp, value) {
+  async function updateStartDate(emp, value, inputEl) {
+    const original = emp.start_date || ''
+    if (value === original) return // nothing actually changed
+
+    const earliest = earliestTimesheet[emp.id]
+    let message = null
+
+    if (earliest && value && value > earliest) {
+      message =
+        `${emp.full_name} already has a submitted timesheet for the period starting ${earliest}, ` +
+        `which is now BEFORE the new start date (${value}) you're setting. This will make their ` +
+        `records look inconsistent in reports and history.\n\nChange it anyway?`
+    } else if (earliest) {
+      message =
+        `${emp.full_name} already has submitted timesheets (earliest: period starting ${earliest}). ` +
+        `Changing their start date won't modify any existing timesheets, but double check this is intentional.\n\nContinue?`
+    }
+
+    if (message && !window.confirm(message)) {
+      if (inputEl) inputEl.value = original // revert the field visually
+      return
+    }
+
     await supabase.from('profiles').update({ start_date: value || null }).eq('id', emp.id)
     load()
   }
@@ -159,7 +193,7 @@ export default function Employees() {
                 Start date
                 <input type="date" className="input !py-1 !w-36 text-xs"
                   defaultValue={emp.start_date || ''}
-                  onBlur={(e) => updateStartDate(emp, e.target.value)} />
+                  onBlur={(e) => updateStartDate(emp, e.target.value, e.target)} />
               </label>
 
               <label className="text-xs text-slate flex items-center gap-1.5">
