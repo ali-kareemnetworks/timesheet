@@ -1,6 +1,6 @@
 # Timekeep — Timesheet App
 
-Mobile-optimized timesheet system with employer and employee portals: project codes, semi-monthly timesheet submission/approval, automatic PTO accrual and tracking, and reporting.
+Mobile-optimized timesheet system with employer and employee portals: project codes assignable per employee, semi-monthly timesheet submission/approval, automatic PTO accrual and tracking, and reporting.
 
 ## Stack (fully free, no server to maintain)
 
@@ -24,7 +24,7 @@ Mobile-optimized timesheet system with employer and employee portals: project co
 
 ## Setting up from scratch (new environment)
 
-1. Create a Supabase project. In **SQL Editor**, run `supabase/schema.sql` — this reflects the *current* state of the app (semi-monthly periods, PTO accrual, branding table all included), so a fresh install doesn't need the individual migration files below.
+1. Create a Supabase project. In **SQL Editor**, run `supabase/schema.sql` — this reflects the *current* state of the app (semi-monthly periods, PTO accrual, branding, assignable codes all included), so a fresh install doesn't need the individual migration files below.
 2. Copy `.env.example` to `.env`, fill in `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` from Supabase → Project Settings → API.
 3. Deploy the `create-employee` Edge Function (Supabase dashboard → Edge Functions → Deploy a new function → Via Editor → paste `supabase/functions/create-employee/index.ts` → name it exactly `create-employee`).
 4. Create your first employer login (Authentication → Users → Add user, then link it via SQL — see comment at the bottom of `schema.sql`).
@@ -40,8 +40,35 @@ Run these migration files **in this order** against your existing Supabase proje
 2. `migration-branding.sql` — adds the logo storage bucket + `company_settings` table
 3. `pto-accrual-migration.sql` — adds automatic per-period PTO accrual (`yearly_vacation_hours ÷ 24`) and backfills it for already-approved timesheets
 4. `pto-usage-by-day-migration.sql` — changes PTO usage from one lump entry per pay period to one entry per actual calendar day taken, and rebuilds existing usage history to match
+5. `migration-code-assignments.sql` — adds employee-to-project-code assignments, and backfills HOLIDAY/VACATION access for existing employees
 
 ---
+
+## Working with the code locally (git over SSH — no more login prompts)
+
+Once this is set up, `git push`/`git pull` never ask for a username or password again. Only needs doing once per laptop.
+
+1. **Generate an SSH key** (in MobaXterm's local terminal):
+   ```
+   ssh-keygen -t ed25519 -C "your-email@example.com"
+   ```
+   Press Enter through the prompts to accept the defaults.
+2. **Copy the public key:**
+   ```
+   cat ~/.ssh/id_ed25519.pub
+   ```
+3. Go to https://github.com/settings/keys → **New SSH key** → paste it in → Save.
+4. **Switch the repo's remote from HTTPS to SSH:**
+   ```
+   git remote set-url origin git@github.com:ali-kareemnetworks/timesheet.git
+   ```
+5. **Test it:**
+   ```
+   ssh -T git@github.com
+   ```
+   You should see: `Hi ali-kareemnetworks! You've successfully authenticated, but GitHub does not provide shell access.` That confirms it worked — from then on, pushes and pulls happen with no prompt at all.
+
+*(If you ever set up a brand-new laptop, or clone the repo fresh elsewhere, just repeat these 5 steps there — the key lives on the machine, not in the repo.)*
 
 ## How the features map to the app
 
@@ -49,15 +76,15 @@ Run these migration files **in this order** against your existing Supabase proje
 |---|---|
 | Employer / employee portals | Role-based routing — one login, app shows the right portal automatically |
 | Project codes (customer, contract/task, labor category) | Employer → **Project Codes** |
+| Codes assignable per employee | Employer → **Project Codes** → expand a code → check employees → **Save assignments**. Employees only see codes they've been assigned to on their timesheet. HOLIDAY/VACATION are automatic for everyone. |
 | Semi-monthly timesheets (1st–15th, 16th–end) | Employee → **Timesheet**, with prev/next period navigation |
 | Approve / reject with correction notice | Employer → **Review**; employee sees reason on **Timesheet** + gets an email if configured |
 | Reports on approved timesheets | Employer → **Reports**, filter by date/employee, CSV export |
-| Add employees (name, email, phone, address, position) | Employer → **Employees** — sends an email invite to set their own password |
+| Add employees (name, email, phone, address, position) | Employer → **Employees** — sends an email invite to set their own password, and auto-grants HOLIDAY/VACATION access |
 | Yearly vacation allotment | Employer → **Employees**, editable per person |
 | Automatic PTO accrual | Approving any timesheet posts `yearly_vacation_hours ÷ 24` to that employee's PTO ledger for that period, regardless of whether they used PTO that period |
 | PTO usage tracked by actual day taken | Approving a timesheet with VACATION hours posts one usage entry per calendar day taken (not one lump entry per period) |
 | Negative-balance PTO submission | Employees can submit VACATION hours even with a negative balance — nothing blocks it |
-| HOLIDAY, VACATION, CLIENT_SITE codes | Seeded automatically; employer can add more anytime |
 | Company logo | Employer → **Branding** — shows on the sign-in page and top-left of the app shell once uploaded |
 
 ## Design notes
@@ -65,6 +92,7 @@ Run these migration files **in this order** against your existing Supabase proje
 - **Fonts:** Headers use **Plus Jakarta Sans**, body text uses **Inter**. Numbers/codes (hours grid, project codes, status badges) use Inter with tabular figures for alignment — no literal monospace/typewriter font.
 - **PTO ledger:** every entry has a type — `accrual` (automatic, per approved period), `usage` (automatic, per day of VACATION taken), or `allotment` (manual grants posted by the employer). The employee's **PTO** page and the employer's **Employees** list both show the running balance rounded to 2 decimal places for display (the underlying numbers are exact; this only affects what's shown on screen).
 - **Security:** Postgres row-level security — employees only ever see their own data; only employer-role accounts see everyone's.
+- **Assignment saving:** employee-code assignment checkboxes are staged locally and only written to the database when you click **Save assignments** — nothing saves on click-by-click.
 
 ## Making changes going forward
 
@@ -81,6 +109,7 @@ Run these migration files **in this order** against your existing Supabase proje
 - **Invite/recovery links** land with `#...&type=invite` in the URL. Supabase's client auto-consumes and strips that hash on load, which can race against the app's own check for it — the fix is capturing the flag once via a `useState` lazy initializer on mount, not re-reading `window.location.hash` on every render.
 - **`.env` is separate from Netlify's environment variables.** Local `.env` only affects `npm run build`/`npm run dev` on your machine; Netlify needs the same values set independently under Site Configuration → Environment Variables when it's building from GitHub.
 - **JS floating-point display:** summing decimal numbers in JavaScript (e.g. `4.67 + 4.67 - 16`) can produce long imprecise decimals like `-1.9899999999999984`. Fixed by rounding with `.toFixed(2)` at display time — the stored data itself is exact.
+- **Git asking for login on every push:** switch to SSH (see the section above) instead of HTTPS + token — permanent fix, no more prompts.
 
 ## Not yet done / optional
 
