@@ -1,19 +1,27 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
-import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, X, ChevronDown, ChevronUp, Check } from 'lucide-react'
 
 const BLANK = { code: '', customer_name: '', contract_task: '', labor_category: '', code_type: 'CLIENT_SITE' }
 const TYPES = ['CLIENT_SITE', 'HOLIDAY', 'VACATION', 'INTERNAL', 'OTHER']
 
+function sameSet(a, b) {
+  if (a.size !== b.size) return false
+  for (const x of a) if (!b.has(x)) return false
+  return true
+}
+
 export default function ProjectCodes() {
   const [codes, setCodes] = useState(null)
   const [employees, setEmployees] = useState([])
-  const [assignments, setAssignments] = useState({}) // codeId -> Set of employeeIds
+  const [assignments, setAssignments] = useState({}) // codeId -> Set of employeeIds (saved state)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(BLANK)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [expanded, setExpanded] = useState(null)
+  const [pending, setPending] = useState(new Set()) // checkbox state for the open panel, unsaved
+  const [saveMsg, setSaveMsg] = useState('')
 
   useEffect(() => { load() }, [])
 
@@ -50,21 +58,49 @@ export default function ProjectCodes() {
     load()
   }
 
-  async function toggleAssignment(codeId, employeeId, isAssigned) {
-    // Optimistic local update so checkboxes feel instant.
-    setAssignments((prev) => {
-      const next = { ...prev, [codeId]: new Set(prev[codeId] || []) }
-      if (isAssigned) next[codeId].delete(employeeId)
-      else next[codeId].add(employeeId)
+  function openAssignPanel(codeId) {
+    if (expanded === codeId) {
+      setExpanded(null)
+      return
+    }
+    setExpanded(codeId)
+    setPending(new Set(assignments[codeId] || []))
+    setSaveMsg('')
+  }
+
+  function toggleCheckbox(employeeId) {
+    setPending((prev) => {
+      const next = new Set(prev)
+      if (next.has(employeeId)) next.delete(employeeId)
+      else next.add(employeeId)
       return next
     })
+    setSaveMsg('')
+  }
 
-    if (isAssigned) {
-      await supabase.from('employee_project_codes').delete()
-        .eq('employee_id', employeeId).eq('project_code_id', codeId)
-    } else {
-      await supabase.from('employee_project_codes').insert({ employee_id: employeeId, project_code_id: codeId })
+  async function handleSaveAssignments(codeId) {
+    const original = assignments[codeId] || new Set()
+    const toAdd = [...pending].filter((id) => !original.has(id))
+    const toRemove = [...original].filter((id) => !pending.has(id))
+
+    setBusy(true)
+    try {
+      if (toAdd.length) {
+        const { error } = await supabase.from('employee_project_codes')
+          .insert(toAdd.map((employee_id) => ({ employee_id, project_code_id: codeId })))
+        if (error) throw error
+      }
+      if (toRemove.length) {
+        const { error } = await supabase.from('employee_project_codes')
+          .delete().eq('project_code_id', codeId).in('employee_id', toRemove)
+        if (error) throw error
+      }
+      setAssignments((prev) => ({ ...prev, [codeId]: new Set(pending) }))
+      setSaveMsg('Saved.')
+    } catch (e) {
+      setSaveMsg('Could not save: ' + e.message)
     }
+    setBusy(false)
   }
 
   return (
@@ -117,9 +153,10 @@ export default function ProjectCodes() {
       <div className="space-y-2">
         {codes === null && <p className="text-slate text-sm">Loading…</p>}
         {codes?.map((c) => {
-          const assignedSet = assignments[c.id] || new Set()
+          const savedSet = assignments[c.id] || new Set()
           const isOpen = expanded === c.id
           const isUniversal = c.code_type === 'HOLIDAY' || c.code_type === 'VACATION'
+          const dirty = isOpen && !sameSet(pending, savedSet)
           return (
             <div key={c.id} className="card p-4">
               <div className="flex items-start justify-between gap-3">
@@ -137,30 +174,43 @@ export default function ProjectCodes() {
               <div className="mt-3 pt-3 border-t border-line">
                 <button
                   className="flex items-center gap-1.5 text-xs font-semibold text-navy"
-                  onClick={() => setExpanded(isOpen ? null : c.id)}
+                  onClick={() => openAssignPanel(c.id)}
                 >
                   {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   Assign employees
                   <span className="text-slate font-normal">
-                    ({isUniversal ? 'everyone — HOLIDAY/VACATION are automatic' : `${assignedSet.size} assigned`})
+                    ({isUniversal ? 'everyone — HOLIDAY/VACATION are automatic' : `${savedSet.size} assigned`})
                   </span>
                 </button>
 
                 {isOpen && !isUniversal && (
-                  <div className="mt-3 grid sm:grid-cols-2 gap-2">
-                    {employees.length === 0 && <p className="text-xs text-slate">No employees yet.</p>}
-                    {employees.map((emp) => {
-                      const checked = assignedSet.has(emp.id)
-                      return (
+                  <div className="mt-3 space-y-3">
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      {employees.length === 0 && <p className="text-xs text-slate">No employees yet.</p>}
+                      {employees.map((emp) => (
                         <label key={emp.id} className="flex items-center gap-2 text-sm">
                           <input
-                            type="checkbox" checked={checked}
-                            onChange={() => toggleAssignment(c.id, emp.id, checked)}
+                            type="checkbox" checked={pending.has(emp.id)}
+                            onChange={() => toggleCheckbox(emp.id)}
                           />
                           {emp.full_name}
                         </label>
-                      )
-                    })}
+                      ))}
+                    </div>
+
+                    {employees.length > 0 && (
+                      <div className="flex items-center gap-3">
+                        <button
+                          className="btn-primary !py-1.5 !px-3 text-xs"
+                          disabled={!dirty || busy}
+                          onClick={() => handleSaveAssignments(c.id)}
+                        >
+                          <Check size={14} /> {busy ? 'Saving…' : 'Save assignments'}
+                        </button>
+                        {dirty && !busy && <span className="text-xs text-gold">Unsaved changes</span>}
+                        {saveMsg && !dirty && <span className="text-xs text-leaf">{saveMsg}</span>}
+                      </div>
+                    )}
                   </div>
                 )}
                 {isOpen && isUniversal && (
