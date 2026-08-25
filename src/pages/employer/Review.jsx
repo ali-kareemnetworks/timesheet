@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
 import { useAuth } from '../../lib/AuthContext.jsx'
 import { formatPeriodLabel } from '../../lib/dates.js'
-import { notifyRejection } from '../../lib/notify.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import { Check, X } from 'lucide-react'
 
@@ -56,10 +55,17 @@ export default function Review() {
     await supabase.from('timesheets').update({
       status: 'rejected', rejection_reason: reason, reviewed_at: new Date().toISOString(), reviewed_by: profile.id,
     }).eq('id', ts.id)
-    await notifyRejection({
-      toEmail: ts.profiles.email, toName: ts.profiles.full_name,
-      weekStart: formatPeriodLabel(ts.period_start_date), reason,
-    })
+
+    // Best-effort — a failed notification shouldn't block the rejection
+    // itself. The employee also sees the reason directly in-app regardless.
+    supabase.functions.invoke('notify-employee-rejection', {
+      body: {
+        employee_id: ts.employee_id,
+        period_label: formatPeriodLabel(ts.period_start_date),
+        reason,
+      },
+    }).catch(() => {})
+
     setRejecting(null)
     setReason('')
     setBusy(false)
