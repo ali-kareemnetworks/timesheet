@@ -1,6 +1,6 @@
 # Timekeep — Timesheet App
 
-Mobile-optimized timesheet system with employer and employee portals: project codes assignable per employee, semi-monthly timesheet submission/approval, automatic PTO accrual and tracking, and reporting.
+Mobile-optimized timesheet system with employer and employee portals: assignable project codes, semi-monthly timesheet submission/approval with justified-change audit logging, automatic start-date-aware PTO accrual, employee offboarding, email notifications, and reporting.
 
 ## Stack (fully free, no server to maintain)
 
@@ -8,67 +8,75 @@ Mobile-optimized timesheet system with employer and employee portals: project co
 |---|---|---|
 | Frontend | React + Vite, hosted on **Netlify** | The actual website people use |
 | Backend/DB | **Supabase** (Postgres) | Database, authentication, row-level security |
-| Employee account creation | Supabase **Edge Function** (`create-employee`) | Runs server-side so the admin key never touches the browser |
-| Invite/notification emails | Supabase Auth emails, sent via **Resend** (custom SMTP, verified domain) | Employee invites + rejected-timesheet notices |
+| Edge Functions | Supabase (Deno) | Admin actions (create/offboard employees) + all email notifications — service-role key never touches the browser |
+| Email | **Resend** (verified domain), called directly from Edge Functions | Employee invites/password resets (via Supabase Auth SMTP) + submission/approval/rejection notifications (via Resend's API directly) |
 | Code hosting | **GitHub** — `github.com/ali-kareemnetworks/timesheet` | Source of truth; pushes here auto-deploy to Netlify |
-| Logo storage | Supabase **Storage** (public `branding` bucket) | Company logo shown on sign-in page and app shell |
+| Logo storage | Supabase **Storage** (public `branding` bucket) | Company logo on sign-in page and app shell |
 
 ## Key locations
 
 - **GitHub repo:** https://github.com/ali-kareemnetworks/timesheet
 - **Supabase project ref:** `ueakikmyytozesgesjcs`
 - **Netlify team:** `aibrahim9386`
-- **Email sending:** Resend, verified domain (not the `onboarding@resend.dev` sandbox — that only sends to your own account)
+
+---
+
+## Edge Functions (all in `supabase/functions/`)
+
+| Function | Trigger | Does |
+|---|---|---|
+| `create-employee` | Employer adds an employee | Creates the auth user, sends invite email, creates profile, auto-assigns HOLIDAY/VACATION codes |
+| `offboard-employee` | Employer offboards/reactivates | Bans/unbans the auth account (real access revocation, not just a flag), stamps `offboarded_at` |
+| `notify-employer-submission` | Employee submits a timesheet | Emails every employer account, with a link to Review |
+| `notify-employee-rejection` | Employer rejects a timesheet | Emails the employee the correction reason |
+| `notify-employee-approval` | Employer approves a timesheet | Emails the employee a confirmation |
+
+The three `notify-*` functions share these **project-level Edge Function secrets** (Supabase dashboard → Edge Functions → Secrets):
+- `RESEND_API_KEY` — from Resend dashboard → API Keys
+- `RESEND_FROM_EMAIL` — e.g. `Timekeep <noreply@yourdomain.com>`, must be on your verified Resend domain
+- `APP_URL` — your live site, e.g. `https://your-site.netlify.app` (optional — emails just omit the link without it)
+
+`create-employee` and `offboard-employee` don't need these — they use the auto-injected `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` only.
+
+**Note:** rejection notifications originally used EmailJS (client-side). That's been fully replaced by `notify-employee-rejection` — the `VITE_EMAILJS_*` env vars are no longer used anywhere and are safe to remove.
 
 ---
 
 ## Setting up from scratch (new environment)
 
-1. Create a Supabase project. In **SQL Editor**, run `supabase/schema.sql` — this reflects the *current* state of the app (semi-monthly periods, PTO accrual, branding, assignable codes all included), so a fresh install doesn't need the individual migration files below.
-2. Copy `.env.example` to `.env`, fill in `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` from Supabase → Project Settings → API.
-3. Deploy the `create-employee` Edge Function (Supabase dashboard → Edge Functions → Deploy a new function → Via Editor → paste `supabase/functions/create-employee/index.ts` → name it exactly `create-employee`).
-4. Create your first employer login (Authentication → Users → Add user, then link it via SQL — see comment at the bottom of `schema.sql`).
-5. Set Authentication → URL Configuration → Site URL to your live site URL (needed before inviting employees, or invite links point to `localhost`).
-6. Set up custom SMTP (Resend) under Authentication → Emails → SMTP Settings — Supabase's default sender only reaches your own org's team and is rate-limited, so this is required for real employee invites.
-7. `npm install`, `npm run build`, deploy `dist/` to Netlify (or connect the GitHub repo directly for auto-deploy on push). Set the same env vars in Netlify's Site Configuration.
+1. Create a Supabase project. Run `supabase/schema.sql` in SQL Editor — reflects current app state end-to-end, so a fresh install doesn't need the individual dated migration files below.
+2. Copy `.env.example` to `.env`, fill in `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
+3. Deploy all five Edge Functions listed above (Edge Functions → Deploy a new function → Via Editor → paste the matching `index.ts` → name it **exactly** as shown in the table).
+4. Set the three Resend secrets (see above).
+5. Create your first employer login (Authentication → Users → Add user, then link via SQL — see comment at the bottom of `schema.sql`).
+6. Set Authentication → URL Configuration → Site URL to your live site URL.
+7. Set up custom SMTP (Resend) under Authentication → Emails → SMTP Settings — needed for Supabase's own invite/password-reset emails (separate from the Resend API calls the Edge Functions make directly).
+8. `npm install`, `npm run build`, deploy to Netlify (or connect the GitHub repo for auto-deploy). Set the same env vars in Netlify's Site Configuration, plus the Resend secrets in Supabase.
 
 ## If you're restoring an existing database instead
 
-Run these migration files **in this order** against your existing Supabase project (they're all still in `supabase/`, kept for reference/history — a brand-new install can skip straight to `schema.sql` instead, since it already reflects the end state):
+Run these in order (all still in `supabase/`, kept for reference — a fresh install can skip to `schema.sql` instead):
 
-1. `migration-semimonthly.sql` — converts weekly timesheets to semi-monthly periods (1st–15th, 16th–end of month)
-2. `migration-branding.sql` — adds the logo storage bucket + `company_settings` table
-3. `pto-accrual-migration.sql` — adds automatic per-period PTO accrual (`yearly_vacation_hours ÷ 24`) and backfills it for already-approved timesheets
-4. `pto-usage-by-day-migration.sql` — changes PTO usage from one lump entry per pay period to one entry per actual calendar day taken, and rebuilds existing usage history to match
-5. `migration-code-assignments.sql` — adds employee-to-project-code assignments, and backfills HOLIDAY/VACATION access for existing employees
+1. `migration-semimonthly.sql` — weekly → semi-monthly periods
+2. `migration-branding.sql` — logo storage + `company_settings`
+3. `pto-accrual-migration.sql` — automatic per-period PTO accrual
+4. `pto-usage-by-day-migration.sql` — PTO usage logged per actual day taken
+5. `migration-code-assignments.sql` — assignable project codes per employee
+6. `migration-start-date.sql` — adds employee `start_date`
+7. `migration-pto-start-date-proration.sql` — ties PTO accrual to start date
+8. `migration-timesheet-adjustments.sql` — audit log for justified hour changes
+9. `migration-offboarding.sql` — adds `offboarded_at` for real offboarding
 
 ---
 
-## Working with the code locally (git over SSH — no more login prompts)
+## What was added today
 
-Once this is set up, `git push`/`git pull` never ask for a username or password again. Only needs doing once per laptop.
-
-1. **Generate an SSH key** (in MobaXterm's local terminal):
-   ```
-   ssh-keygen -t ed25519 -C "your-email@example.com"
-   ```
-   Press Enter through the prompts to accept the defaults.
-2. **Copy the public key:**
-   ```
-   cat ~/.ssh/id_ed25519.pub
-   ```
-3. Go to https://github.com/settings/keys → **New SSH key** → paste it in → Save.
-4. **Switch the repo's remote from HTTPS to SSH:**
-   ```
-   git remote set-url origin git@github.com:ali-kareemnetworks/timesheet.git
-   ```
-5. **Test it:**
-   ```
-   ssh -T git@github.com
-   ```
-   You should see: `Hi ali-kareemnetworks! You've successfully authenticated, but GitHub does not provide shell access.` That confirms it worked — from then on, pushes and pulls happen with no prompt at all.
-
-*(If you ever set up a brand-new laptop, or clone the repo fresh elsewhere, just repeat these 5 steps there — the key lives on the machine, not in the repo.)*
+- **Assignable project codes:** employer assigns which employees can use which project codes (Project Codes page, per-code checkboxes). HOLIDAY and VACATION are automatic for everyone; everything else needs explicit assignment. Employees only see codes they've been assigned on their Timesheet page.
+- **Employee start date:** settable when creating an employee, editable afterward — but editing now **warns before applying** if the employee already has submitted timesheets, with a stronger warning if the change would contradict an existing timesheet's dates.
+- **PTO tied to start date:** periods entirely before an employee's start date accrue nothing; the period they start in accrues a prorated share based on days actually employed that period; full accrual applies to every period after. Employees with no start date set are unaffected (treated as always employed, unchanged behavior).
+- **Justified timesheet changes + audit log:** changing an already-saved hour value (not a first-time entry) requires a written justification before saving/submitting, with a "use for all days" bulk-apply option. Every change is permanently logged (insert-only, no edit/delete) and viewable in both the employee's History page and the employer's Review page.
+- **Real employee offboarding:** "Offboard" actually revokes login access (bans the Supabase Auth account, not just a cosmetic flag — this was a real gap in the old "Deactivate" button, now fixed). All historical timesheets, PTO, and reports remain fully intact and queryable. Offboarded employees are shown separately, read-only, with a Reactivate option. True SQL deletion was intentionally avoided — `ON DELETE CASCADE` on the schema means a hard delete would wipe out their timesheet/PTO history, which is exactly what needs to be preserved.
+- **Email notifications for the full approval lifecycle:** employee submits → employer emailed; employer rejects → employee emailed with the reason; employer approves → employee emailed confirmation. All three via dedicated Edge Functions calling Resend directly (more reliable than the EmailJS approach originally used for rejections).
 
 ## How the features map to the app
 
@@ -76,43 +84,44 @@ Once this is set up, `git push`/`git pull` never ask for a username or password 
 |---|---|
 | Employer / employee portals | Role-based routing — one login, app shows the right portal automatically |
 | Project codes (customer, contract/task, labor category) | Employer → **Project Codes** |
-| Codes assignable per employee | Employer → **Project Codes** → expand a code → check employees → **Save assignments**. Employees only see codes they've been assigned to on their timesheet. HOLIDAY/VACATION are automatic for everyone. |
-| Semi-monthly timesheets (1st–15th, 16th–end) | Employee → **Timesheet**, with prev/next period navigation |
-| Approve / reject with correction notice | Employer → **Review**; employee sees reason on **Timesheet** + gets an email if configured |
-| Reports on approved timesheets | Employer → **Reports**, filter by date/employee, CSV export |
-| Add employees (name, email, phone, address, position) | Employer → **Employees** — sends an email invite to set their own password, and auto-grants HOLIDAY/VACATION access |
-| Yearly vacation allotment | Employer → **Employees**, editable per person |
-| Automatic PTO accrual | Approving any timesheet posts `yearly_vacation_hours ÷ 24` to that employee's PTO ledger for that period, regardless of whether they used PTO that period |
-| PTO usage tracked by actual day taken | Approving a timesheet with VACATION hours posts one usage entry per calendar day taken (not one lump entry per period) |
-| Negative-balance PTO submission | Employees can submit VACATION hours even with a negative balance — nothing blocks it |
-| Company logo | Employer → **Branding** — shows on the sign-in page and top-left of the app shell once uploaded |
+| Codes assignable per employee | Employer → **Project Codes** → "Assign employees" per code |
+| Semi-monthly timesheets (1st–15th, 16th–end) | Employee → **Timesheet**, prev/next period navigation |
+| Approve / reject with correction notice + email | Employer → **Review**; employee sees reason in-app + gets an email either way |
+| Justified changes + audit log | Employee → **Timesheet** (editing) and **History**; Employer → **Review** (expanded view) |
+| Reports on approved timesheets | Employer → **Reports**, filter by date/employee (includes offboarded employees), CSV export |
+| Add / offboard employees | Employer → **Employees** |
+| Employee start date | Set on creation, editable with confirmation afterward |
+| Yearly vacation allotment + start-date-aware accrual | Employer → **Employees** (set allotment); accrual automatic on approval, prorated around start date |
+| Negative-balance PTO submission | Employees can submit VACATION hours even with a negative balance |
+| PTO usage tracked by actual day taken | One usage ledger entry per calendar day taken, not per period |
+| HOLIDAY, VACATION, CLIENT_SITE codes | Seeded automatically; HOLIDAY/VACATION auto-assigned to every employee |
+| Company logo | Employer → **Branding** |
 
 ## Design notes
 
-- **Fonts:** Headers use **Plus Jakarta Sans**, body text uses **Inter**. Numbers/codes (hours grid, project codes, status badges) use Inter with tabular figures for alignment — no literal monospace/typewriter font.
-- **PTO ledger:** every entry has a type — `accrual` (automatic, per approved period), `usage` (automatic, per day of VACATION taken), or `allotment` (manual grants posted by the employer). The employee's **PTO** page and the employer's **Employees** list both show the running balance rounded to 2 decimal places for display (the underlying numbers are exact; this only affects what's shown on screen).
-- **Security:** Postgres row-level security — employees only ever see their own data; only employer-role accounts see everyone's.
-- **Assignment saving:** employee-code assignment checkboxes are staged locally and only written to the database when you click **Save assignments** — nothing saves on click-by-click.
+- **Fonts:** Headers use **Plus Jakarta Sans**, body uses **Inter**. Numbers/codes use Inter with tabular figures — no literal monospace font.
+- **PTO ledger entry types:** `accrual` (automatic, per approved period, start-date-aware), `usage` (automatic, per day of VACATION taken), `allotment` (manual grants). Displayed balances are rounded to 2 decimals (underlying numbers are exact — this is a JS floating-point display fix only).
+- **Security:** Postgres row-level security throughout — employees only see their own data; only employer-role accounts see everyone's. All admin-privileged actions (creating/offboarding employees, cross-user emails) go through Edge Functions using the service-role key server-side, never in the browser.
 
 ## Making changes going forward
 
-1. Edit files locally.
-2. `git add .` → `git commit -m "..."` → `git push`
-3. Netlify auto-builds and deploys — check the **Deploys** tab.
-4. If a change touches the database, write it as a new `supabase/migration-*.sql` file, run it in the Supabase SQL Editor, and also update `supabase/schema.sql` so a fresh install stays in sync with production.
+1. Edit files locally, test, `git add .` → `git commit` → `git push`. Netlify auto-deploys.
+2. Database changes: write a new `supabase/migration-*.sql` file, run it in SQL Editor, and update `supabase/schema.sql` so a fresh install stays in sync.
+3. New Edge Functions: create under `supabase/functions/<name>/index.ts`, deploy via dashboard, name must match exactly what the app calls via `supabase.functions.invoke(...)`.
 
 ## Known gotchas (reference)
 
-- **Generated columns + `date_trunc`:** Postgres can reject `date_trunc` inside a `generated ... stored` column with "generation expression is not immutable" because of ambiguous timestamp/timestamptz overload resolution. Use `make_date(...)` instead, which has no such ambiguity.
-- **Supabase's default email sender** only delivers to your org's team members and is capped at a few emails/hour — this is why custom SMTP (Resend) is required for real employee invites.
-- **Resend's sandbox address** (`onboarding@resend.dev`) can only send to your own verified Resend account email until a real domain is verified — verify a domain before relying on invites reaching employees.
-- **Invite/recovery links** land with `#...&type=invite` in the URL. Supabase's client auto-consumes and strips that hash on load, which can race against the app's own check for it — the fix is capturing the flag once via a `useState` lazy initializer on mount, not re-reading `window.location.hash` on every render.
-- **`.env` is separate from Netlify's environment variables.** Local `.env` only affects `npm run build`/`npm run dev` on your machine; Netlify needs the same values set independently under Site Configuration → Environment Variables when it's building from GitHub.
-- **JS floating-point display:** summing decimal numbers in JavaScript (e.g. `4.67 + 4.67 - 16`) can produce long imprecise decimals like `-1.9899999999999984`. Fixed by rounding with `.toFixed(2)` at display time — the stored data itself is exact.
-- **Git asking for login on every push:** switch to SSH (see the section above) instead of HTTPS + token — permanent fix, no more prompts.
+- **Generated columns + `date_trunc`:** can throw "generation expression is not immutable" from ambiguous overload resolution. Use `make_date(...)` instead.
+- **Supabase's default email sender** only reaches org team members and is rate-limited — custom SMTP (Resend) is required for real invite/reset emails.
+- **Resend's sandbox address** (`onboarding@resend.dev`) only sends to your own account until a domain is verified.
+- **Invite/recovery links** land with `#...&type=invite` in the URL; Supabase's client auto-strips it, which can race the app's own check — fixed by capturing it once via a `useState` lazy initializer on mount.
+- **`.env` vs Netlify env vars are separate** — both need the same values set independently.
+- **JS floating-point display:** summing decimals (e.g. `4.67 + 4.67 - 16`) can show as `-1.9899999999999984`. Fixed with `.toFixed(2)` at display time only.
+- **Edge Function 404/CORS errors** almost always mean the function name doesn't match exactly what's deployed, or it was never actually deployed — check Edge Functions → [name] → Logs, and the browser Network tab's preflight request status.
+- **EmailJS was dropped** for rejection notifications in favor of Resend-via-Edge-Function — more reliable, no separate browser-side config to maintain.
 
 ## Not yet done / optional
 
 - Custom domain for the Netlify site
-- EmailJS is wired in as a secondary rejection-notification channel but isn't required (Resend/Supabase handles invite emails); leave `VITE_EMAILJS_*` blank unless wanted
-- A HostGator/PHP+MySQL version was discussed early on but not built, since this free Supabase/Netlify stack was chosen instead
+- A HostGator/PHP+MySQL version was considered early on but not built, since this free Supabase/Netlify stack was chosen instead
+- Blocking/hiding timesheet periods before an employee's start date (currently only PTO accrual respects the start date — nothing stops submitting a timesheet for an earlier period)
