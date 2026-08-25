@@ -189,6 +189,12 @@ export default function Period() {
       setBaseline(hours)
       setJustifications({})
       setMessage('Timesheet submitted for approval.')
+
+      // Best-effort — a failed notification shouldn't block the submission
+      // itself, since it already succeeded above.
+      supabase.functions.invoke('notify-employer-submission', {
+        body: { period_label: formatPeriodLabel(periodStart) },
+      }).catch(() => {})
     } catch (e) {
       setMessage('Could not submit: ' + e.message)
     }
