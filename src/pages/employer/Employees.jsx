@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
-import { UserPlus, X } from 'lucide-react'
+import { UserPlus, X, UserMinus, RotateCcw } from 'lucide-react'
 
 const BLANK = { full_name: '', email: '', phone: '', home_address: '', position: '', yearly_vacation_hours: 80, start_date: '' }
 
 export default function Employees() {
   const [employees, setEmployees] = useState(null)
   const [balances, setBalances] = useState({})
-  const [earliestTimesheet, setEarliestTimesheet] = useState({}) // employeeId -> earliest period_start_date
+  const [earliestTimesheet, setEarliestTimesheet] = useState({})
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(BLANK)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [offboardBusy, setOffboardBusy] = useState(null)
   const [grantFor, setGrantFor] = useState(null)
   const [grantAmount, setGrantAmount] = useState('')
 
@@ -25,8 +26,6 @@ export default function Employees() {
     for (const b of bal || []) map[b.employee_id] = b.balance
     setBalances(map)
 
-    // Track each employee's earliest timesheet so we know whether changing
-    // their start date could contradict something they've already submitted.
     const { data: sheets } = await supabase.from('timesheets').select('employee_id, period_start_date')
     const earliest = {}
     for (const s of sheets || []) {
@@ -63,11 +62,6 @@ export default function Employees() {
     load()
   }
 
-  async function toggleActive(emp) {
-    await supabase.from('profiles').update({ active: !emp.active }).eq('id', emp.id)
-    load()
-  }
-
   async function updateAllotment(emp, value) {
     await supabase.from('profiles').update({ yearly_vacation_hours: value }).eq('id', emp.id)
     load()
@@ -75,7 +69,7 @@ export default function Employees() {
 
   async function updateStartDate(emp, value, inputEl) {
     const original = emp.start_date || ''
-    if (value === original) return // nothing actually changed
+    if (value === original) return
 
     const earliest = earliestTimesheet[emp.id]
     let message = null
@@ -92,7 +86,7 @@ export default function Employees() {
     }
 
     if (message && !window.confirm(message)) {
-      if (inputEl) inputEl.value = original // revert the field visually
+      if (inputEl) inputEl.value = original
       return
     }
 
@@ -110,6 +104,42 @@ export default function Employees() {
     setGrantAmount('')
     load()
   }
+
+  async function handleOffboard(emp) {
+    const confirmMsg =
+      `Offboard ${emp.full_name}?\n\n` +
+      `They will immediately lose the ability to sign in. All their historical timesheets, ` +
+      `PTO history, and reports stay fully intact — nothing is deleted. You can reactivate ` +
+      `them later if needed.`
+    if (!window.confirm(confirmMsg)) return
+
+    setOffboardBusy(emp.id)
+    const { data, error } = await supabase.functions.invoke('offboard-employee', {
+      body: { employee_id: emp.id, offboard: true },
+    })
+    setOffboardBusy(null)
+    if (error || data?.error) {
+      alert('Could not offboard: ' + (data?.error || error.message))
+      return
+    }
+    load()
+  }
+
+  async function handleReactivate(emp) {
+    setOffboardBusy(emp.id)
+    const { data, error } = await supabase.functions.invoke('offboard-employee', {
+      body: { employee_id: emp.id, offboard: false },
+    })
+    setOffboardBusy(null)
+    if (error || data?.error) {
+      alert('Could not reactivate: ' + (data?.error || error.message))
+      return
+    }
+    load()
+  }
+
+  const activeEmployees = employees?.filter((e) => e.active) || []
+  const offboardedEmployees = employees?.filter((e) => !e.active) || []
 
   return (
     <div className="space-y-5">
@@ -173,11 +203,11 @@ export default function Employees() {
 
       <div className="space-y-2">
         {employees === null && <p className="text-slate text-sm">Loading…</p>}
-        {employees?.map((emp) => (
+        {activeEmployees.map((emp) => (
           <div key={emp.id} className="card p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-medium text-sm">{emp.full_name} {!emp.active && <span className="text-xs text-rust ml-1">(inactive)</span>}</p>
+                <p className="font-medium text-sm">{emp.full_name}</p>
                 <p className="text-xs text-slate">{emp.email} · {emp.phone || 'no phone'}</p>
                 <p className="text-xs text-slate">{emp.position || 'No position set'}</p>
                 <p className="text-xs text-slate">{emp.home_address}</p>
@@ -214,13 +244,49 @@ export default function Employees() {
                 <button className="btn-secondary !py-1 !px-2 text-xs" onClick={() => setGrantFor(emp.id)}>Grant PTO hours</button>
               )}
 
-              <button className="text-xs text-slate underline ml-auto" onClick={() => toggleActive(emp)}>
-                {emp.active ? 'Deactivate' : 'Reactivate'}
+              <button
+                className="text-xs text-rust underline ml-auto flex items-center gap-1"
+                disabled={offboardBusy === emp.id}
+                onClick={() => handleOffboard(emp)}
+              >
+                <UserMinus size={12} /> {offboardBusy === emp.id ? 'Offboarding…' : 'Offboard'}
               </button>
             </div>
           </div>
         ))}
       </div>
+
+      {offboardedEmployees.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-slate uppercase tracking-wide pt-2">Offboarded</h2>
+          {offboardedEmployees.map((emp) => (
+            <div key={emp.id} className="card p-4 bg-paper/60">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-sm text-slate">{emp.full_name}</p>
+                  <p className="text-xs text-slate">{emp.email}</p>
+                  {emp.offboarded_at && (
+                    <p className="text-xs text-slate mt-1">Offboarded {new Date(emp.offboarded_at).toLocaleDateString()}</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="font-mono text-sm font-semibold text-slate">{Number(balances[emp.id] ?? 0).toFixed(2)} hrs</p>
+                  <p className="text-[11px] text-slate">Final PTO balance</p>
+                </div>
+              </div>
+              <div className="flex justify-end mt-3 pt-3 border-t border-line">
+                <button
+                  className="text-xs text-navy underline flex items-center gap-1"
+                  disabled={offboardBusy === emp.id}
+                  onClick={() => handleReactivate(emp)}
+                >
+                  <RotateCcw size={12} /> {offboardBusy === emp.id ? 'Reactivating…' : 'Reactivate'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
