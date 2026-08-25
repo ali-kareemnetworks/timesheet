@@ -45,6 +45,15 @@ export default function Review() {
     await supabase.from('timesheets').update({
       status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: profile.id,
     }).eq('id', ts.id)
+
+    // Best-effort — a failed notification shouldn't block the approval itself.
+    supabase.functions.invoke('notify-employee-approval', {
+      body: {
+        employee_id: ts.employee_id,
+        period_label: formatPeriodLabel(ts.period_start_date),
+      },
+    }).catch(() => {})
+
     setBusy(false)
     load()
   }
