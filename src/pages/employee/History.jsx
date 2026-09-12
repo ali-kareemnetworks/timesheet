@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase.js'
 import { useAuth } from '../../lib/AuthContext.jsx'
 import { formatPeriodLabel } from '../../lib/dates.js'
@@ -57,6 +58,16 @@ export default function History() {
                 {expanded === ts.id ? <ChevronUp size={16} className="text-slate" /> : <ChevronDown size={16} className="text-slate" />}
               </div>
             </div>
+
+            {ts.status === 'pending_acknowledgment' && (
+              <Link
+                to={`/employee?period=${ts.period_start_date}`}
+                className="btn-primary w-full mt-3 !py-2 text-sm"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Review & confirm
+              </Link>
+            )}
 
             {expanded === ts.id && (
               <div className="mt-3 pt-3 border-t border-line">

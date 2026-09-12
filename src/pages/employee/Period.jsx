@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase.js'
 import { useAuth } from '../../lib/AuthContext.jsx'
 import { startOfPeriod, prevPeriodStart, nextPeriodStart, toISODate, periodDays, formatPeriodLabel, shortDayLabel } from '../../lib/dates.js'
@@ -16,7 +17,8 @@ function codeValidOnDay(code, day) {
 
 export default function Period() {
   const { profile } = useAuth()
-  const [periodStart, setPeriodStart] = useState(toISODate(startOfPeriod()))
+  const [searchParams] = useSearchParams()
+  const [periodStart, setPeriodStart] = useState(() => searchParams.get('period') || toISODate(startOfPeriod()))
   const [codes, setCodes] = useState([])
   const [timesheet, setTimesheet] = useState(null) // null = not created yet
   const [hours, setHours] = useState({}) // key: `${codeId}|${day}` -> string
@@ -28,7 +30,7 @@ export default function Period() {
   const [message, setMessage] = useState('')
 
   const days = useMemo(() => periodDays(periodStart), [periodStart])
-  const editable = !timesheet || timesheet.status === 'draft' || timesheet.status === 'rejected'
+  const editable = !timesheet || timesheet.status === 'draft' || timesheet.status === 'rejected' || timesheet.status === 'pending_acknowledgment'
 
   useEffect(() => { load() }, [periodStart])
 
@@ -255,6 +257,19 @@ export default function Period() {
         </div>
       )}
 
+      {timesheet?.status === 'pending_acknowledgment' && (
+        <div className="card p-4 border-gold bg-gold/5 flex gap-3">
+          <AlertTriangle className="text-gold shrink-0" size={20} />
+          <div>
+            <p className="font-semibold text-navy text-sm">Your employer entered these hours</p>
+            <p className="text-sm text-ink/80 mt-1">
+              Review them below, correct anything that's wrong (you'll be asked to explain any change), then check
+              the certification box and confirm.
+            </p>
+          </div>
+        </div>
+      )}
+
       {timesheet?.certified_at && !editable && (
         <p className="text-xs text-slate">
           Certified {new Date(timesheet.certified_at).toLocaleString()}
@@ -385,7 +400,9 @@ export default function Period() {
               Save draft
             </button>
             <button className="btn-primary flex-1" disabled={!canSubmit} onClick={handleSubmit}>
-              {timesheet?.status === 'rejected' ? 'Resubmit' : 'Submit for approval'}
+              {timesheet?.status === 'pending_acknowledgment' ? 'Confirm & submit'
+                : timesheet?.status === 'rejected' ? 'Resubmit'
+                : 'Submit for approval'}
             </button>
           </div>
         </div>
