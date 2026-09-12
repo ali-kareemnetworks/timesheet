@@ -3,7 +3,7 @@ import { useAuth } from '../lib/AuthContext.jsx'
 import { useCompanyLogo } from '../lib/branding.js'
 import {
   ClipboardList, LayoutGrid, ClipboardCheck, Users, Tag, BarChart3,
-  CalendarDays, History, PalmtreeIcon, LogOut, Image,
+  CalendarDays, History, PalmtreeIcon, LogOut, Image, KeyRound,
 } from 'lucide-react'
 
 const EMPLOYER_NAV = [
@@ -13,12 +13,14 @@ const EMPLOYER_NAV = [
   { to: '/employer/project-codes', label: 'Codes', icon: Tag },
   { to: '/employer/reports', label: 'Reports', icon: BarChart3 },
   { to: '/employer/settings', label: 'Branding', icon: Image },
+  { to: '/employer/account', label: 'Account', icon: KeyRound },
 ]
 
 const EMPLOYEE_NAV = [
   { to: '/employee', label: 'Timesheet', icon: CalendarDays, end: true },
   { to: '/employee/history', label: 'History', icon: History },
   { to: '/employee/pto', label: 'PTO', icon: PalmtreeIcon },
+  { to: '/employee/account', label: 'Account', icon: KeyRound },
 ]
 
 function Brand({ size = 22, textClass = 'font-display text-lg font-semibold' }) {

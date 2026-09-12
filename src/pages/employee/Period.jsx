@@ -5,6 +5,9 @@ import { startOfPeriod, prevPeriodStart, nextPeriodStart, toISODate, periodDays,
 import StatusBadge from '../../components/StatusBadge.jsx'
 import { ChevronLeft, ChevronRight, AlertTriangle, Copy } from 'lucide-react'
 
+const CERTIFICATION_TEXT =
+  'I certify that the hours recorded on this timesheet are true and accurate and reflect the actual hours I worked.'
+
 export default function Period() {
   const { profile } = useAuth()
   const [periodStart, setPeriodStart] = useState(toISODate(startOfPeriod()))
@@ -13,6 +16,7 @@ export default function Period() {
   const [hours, setHours] = useState({}) // key: `${codeId}|${day}` -> string
   const [baseline, setBaseline] = useState({}) // last-saved hours, same shape as `hours`
   const [justifications, setJustifications] = useState({}) // day -> string
+  const [certified, setCertified] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -25,6 +29,7 @@ export default function Period() {
   async function load() {
     setLoading(true)
     setMessage('')
+    setCertified(false)
 
     const { data: assigned } = await supabase
       .from('employee_project_codes')
@@ -175,6 +180,10 @@ export default function Period() {
       setMessage('Please provide a justification for every changed day before submitting.')
       return
     }
+    if (!certified) {
+      setMessage('Please check the certification box before submitting.')
+      return
+    }
     setSaving(true)
     setMessage('')
     try {
@@ -182,12 +191,19 @@ export default function Period() {
       await saveEntries(ts)
       await logAdjustments(ts)
       const { data, error } = await supabase.from('timesheets')
-        .update({ status: 'submitted', submitted_at: new Date().toISOString(), rejection_reason: null })
+        .update({
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+          rejection_reason: null,
+          certified_at: new Date().toISOString(),
+          certification_text: CERTIFICATION_TEXT,
+        })
         .eq('id', ts.id).select().single()
       if (error) throw error
       setTimesheet(data)
       setBaseline(hours)
       setJustifications({})
+      setCertified(false)
       setMessage('Timesheet submitted for approval.')
 
       // Best-effort — a failed notification shouldn't block the submission
@@ -204,6 +220,7 @@ export default function Period() {
   if (loading) return <p className="text-slate font-mono text-sm">Loading…</p>
 
   const tableMinWidth = Math.max(640, 220 + days.length * 64)
+  const canSubmit = !saving && !(needsJustification && !allJustified) && certified
 
   return (
     <div className="space-y-5">
@@ -230,6 +247,12 @@ export default function Period() {
             <p className="text-sm text-ink/80 mt-1">{timesheet.rejection_reason}</p>
           </div>
         </div>
+      )}
+
+      {timesheet?.certified_at && !editable && (
+        <p className="text-xs text-slate">
+          Certified {new Date(timesheet.certified_at).toLocaleString()}
+        </p>
       )}
 
       {codes.length === 0 ? (
@@ -335,13 +358,23 @@ export default function Period() {
       {message && <p className="text-sm text-slate">{message}</p>}
 
       {editable && codes.length > 0 && (
-        <div className="flex gap-3">
-          <button className="btn-secondary flex-1" disabled={saving || (needsJustification && !allJustified)} onClick={handleSaveDraft}>
-            Save draft
-          </button>
-          <button className="btn-primary flex-1" disabled={saving || (needsJustification && !allJustified)} onClick={handleSubmit}>
-            {timesheet?.status === 'rejected' ? 'Resubmit' : 'Submit for approval'}
-          </button>
+        <div className="space-y-3">
+          <label className="card p-4 flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox" className="mt-0.5" checked={certified}
+              onChange={(e) => setCertified(e.target.checked)}
+            />
+            <span className="text-sm text-ink">{CERTIFICATION_TEXT}</span>
+          </label>
+
+          <div className="flex gap-3">
+            <button className="btn-secondary flex-1" disabled={saving || (needsJustification && !allJustified)} onClick={handleSaveDraft}>
+              Save draft
+            </button>
+            <button className="btn-primary flex-1" disabled={!canSubmit} onClick={handleSubmit}>
+              {timesheet?.status === 'rejected' ? 'Resubmit' : 'Submit for approval'}
+            </button>
+          </div>
         </div>
       )}
       {!editable && (

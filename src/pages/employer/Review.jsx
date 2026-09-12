@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase.js'
 import { useAuth } from '../../lib/AuthContext.jsx'
 import { formatPeriodLabel } from '../../lib/dates.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
-import { Check, X } from 'lucide-react'
+import { Check, X, ShieldCheck } from 'lucide-react'
 
 export default function Review() {
   const { profile } = useAuth()
@@ -119,6 +119,18 @@ export default function Review() {
                 <div className="flex justify-between text-sm font-semibold pt-1 border-t border-line">
                   <span>Total</span><span className="font-mono">{total(ts)} hrs</span>
                 </div>
+
+                {ts.certified_at && (
+                  <div className="flex gap-2 pt-2 border-t border-line">
+                    <ShieldCheck className="text-leaf shrink-0" size={16} />
+                    <div>
+                      <p className="text-xs text-slate">
+                        Certified by {ts.profiles.full_name} on {new Date(ts.certified_at).toLocaleString()}
+                      </p>
+                      <p className="text-xs text-slate/70 italic mt-0.5">"{ts.certification_text}"</p>
+                    </div>
+                  </div>
+                )}
 
                 {adjustments[ts.id]?.length > 0 && (
                   <div className="pt-2 border-t border-line">

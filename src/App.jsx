@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './lib/AuthContext.jsx'
 import Login from './pages/Login.jsx'
 import SetPassword from './pages/SetPassword.jsx'
+import Account from './pages/Account.jsx'
 import Layout from './components/Layout.jsx'
 
 import EmployerDashboard from './pages/employer/Dashboard.jsx'
@@ -58,12 +59,14 @@ export default function App() {
         <Route path="project-codes" element={<EmployerProjectCodes />} />
         <Route path="reports" element={<EmployerReports />} />
         <Route path="settings" element={<EmployerSettings />} />
+        <Route path="account" element={<Account />} />
       </Route>
 
       <Route path="/employee" element={<Protected role="employee"><Layout /></Protected>}>
         <Route index element={<EmployeePeriod />} />
         <Route path="history" element={<EmployeeHistory />} />
         <Route path="pto" element={<EmployeePTO />} />
+        <Route path="account" element={<Account />} />
       </Route>
 
       <Route
