@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
 import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
 
-const BLANK = { code: '', customer_name: '', contract_task: '', labor_category: '', code_type: 'CLIENT_SITE' }
+const BLANK = { code: '', customer_name: '', contract_task: '', labor_category: '', code_type: 'CLIENT_SITE', start_date: '', end_date: '' }
 const TYPES = ['CLIENT_SITE', 'HOLIDAY', 'VACATION', 'INTERNAL', 'OTHER']
 
 export default function ProjectCodes() {
@@ -20,9 +20,6 @@ export default function ProjectCodes() {
   async function load() {
     const [{ data: codeData }, { data: empData }, { data: assignData }] = await Promise.all([
       supabase.from('project_codes').select('*').order('code_type').order('code'),
-      // Only active employees can be assigned — offboarded employees keep
-      // their historical assignments in the database, they just don't
-      // show up here as options anymore.
       supabase.from('profiles').select('id, full_name').eq('role', 'employee').eq('active', true).order('full_name'),
       supabase.from('employee_project_codes').select('employee_id, project_code_id'),
     ])
@@ -40,7 +37,8 @@ export default function ProjectCodes() {
     e.preventDefault()
     setBusy(true)
     setError('')
-    const { error } = await supabase.from('project_codes').insert(form)
+    const payload = { ...form, start_date: form.start_date || null, end_date: form.end_date || null }
+    const { error } = await supabase.from('project_codes').insert(payload)
     setBusy(false)
     if (error) { setError(error.message); return }
     setForm(BLANK)
@@ -50,6 +48,11 @@ export default function ProjectCodes() {
 
   async function toggleActive(c) {
     await supabase.from('project_codes').update({ active: !c.active }).eq('id', c.id)
+    load()
+  }
+
+  async function updateValidity(c, field, value) {
+    await supabase.from('project_codes').update({ [field]: value || null }).eq('id', c.id)
     load()
   }
 
@@ -109,10 +112,22 @@ export default function ProjectCodes() {
               <input className="input" value={form.labor_category}
                 onChange={(e) => setForm({ ...form, labor_category: e.target.value })} />
             </div>
+            <div>
+              <label className="label">Valid from <span className="font-normal normal-case text-slate">(optional)</span></label>
+              <input type="date" className="input" value={form.start_date}
+                onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Valid until <span className="font-normal normal-case text-slate">(optional)</span></label>
+              <input type="date" className="input" value={form.end_date}
+                onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
+            </div>
           </div>
           {error && <p className="text-rust text-sm">{error}</p>}
           <button className="btn-primary w-full" disabled={busy}>{busy ? 'Saving…' : 'Save code'}</button>
-          <p className="text-xs text-slate">You can assign employees to this code right after saving it, below.</p>
+          <p className="text-xs text-slate">
+            Leave the dates blank for no restriction. If set, employees won't be able to log hours to this code outside that window.
+          </p>
         </form>
       )}
 
@@ -122,11 +137,16 @@ export default function ProjectCodes() {
           const assignedSet = assignments[c.id] || new Set()
           const isOpen = expanded === c.id
           const isUniversal = c.code_type === 'HOLIDAY' || c.code_type === 'VACATION'
+          const today = new Date().toISOString().slice(0, 10)
+          const isExpired = c.end_date && c.end_date < today
           return (
             <div key={c.id} className="card p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-mono text-sm font-semibold text-navy">{c.code} <span className="text-[11px] font-body font-normal text-slate">· {c.code_type}</span></p>
+                  <p className="font-mono text-sm font-semibold text-navy">
+                    {c.code} <span className="text-[11px] font-body font-normal text-slate">· {c.code_type}</span>
+                    {isExpired && <span className="text-[11px] font-body font-semibold text-rust ml-2">EXPIRED</span>}
+                  </p>
                   {c.customer_name && <p className="text-xs text-slate mt-1">Customer: {c.customer_name}</p>}
                   {c.contract_task && <p className="text-xs text-slate">Contract/task: {c.contract_task}</p>}
                   {c.labor_category && <p className="text-xs text-slate">Labor category: {c.labor_category}</p>}
@@ -134,6 +154,21 @@ export default function ProjectCodes() {
                 <button className="text-xs text-slate underline shrink-0" onClick={() => toggleActive(c)}>
                   {c.active ? 'Deactivate' : 'Reactivate'}
                 </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-line">
+                <label className="text-xs text-slate flex items-center gap-1.5">
+                  Valid from
+                  <input type="date" className="input !py-1 !w-36 text-xs"
+                    defaultValue={c.start_date || ''}
+                    onBlur={(e) => updateValidity(c, 'start_date', e.target.value)} />
+                </label>
+                <label className="text-xs text-slate flex items-center gap-1.5">
+                  Valid until
+                  <input type="date" className="input !py-1 !w-36 text-xs"
+                    defaultValue={c.end_date || ''}
+                    onBlur={(e) => updateValidity(c, 'end_date', e.target.value)} />
+                </label>
               </div>
 
               <div className="mt-3 pt-3 border-t border-line">

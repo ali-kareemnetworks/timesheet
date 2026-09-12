@@ -8,6 +8,12 @@ import { ChevronLeft, ChevronRight, AlertTriangle, Copy } from 'lucide-react'
 const CERTIFICATION_TEXT =
   'I certify that the hours recorded on this timesheet are true and accurate and reflect the actual hours I worked.'
 
+function codeValidOnDay(code, day) {
+  if (code.start_date && day < code.start_date) return false
+  if (code.end_date && day > code.end_date) return false
+  return true
+}
+
 export default function Period() {
   const { profile } = useAuth()
   const [periodStart, setPeriodStart] = useState(toISODate(startOfPeriod()))
@@ -283,17 +289,24 @@ export default function Period() {
                     {c.customer_name && c.code_type === 'CLIENT_SITE' && (
                       <div className="text-[11px] text-slate">{c.customer_name}</div>
                     )}
+                    {(c.start_date || c.end_date) && (
+                      <div className="text-[10px] text-slate/70">
+                        {c.start_date || '…'} – {c.end_date || '…'}
+                      </div>
+                    )}
                   </td>
                   {days.map((d) => {
                     const key = `${c.id}|${d}`
                     const changed = baseline[key] !== undefined && (parseFloat(baseline[key]) || 0) !== (parseFloat(hours[key]) || 0)
+                    const validDay = codeValidOnDay(c, d)
                     return (
                       <td key={d} className="px-1.5 py-1.5">
                         <input
                           type="text" inputMode="decimal"
-                          className={`hour-cell ${changed ? 'border-gold bg-gold/5' : ''}`}
-                          placeholder="0"
-                          disabled={!editable}
+                          className={`hour-cell ${changed ? 'border-gold bg-gold/5' : ''} ${!validDay ? 'bg-slate/10 cursor-not-allowed' : ''}`}
+                          placeholder={validDay ? '0' : '—'}
+                          disabled={!editable || !validDay}
+                          title={!validDay ? `${c.code} isn't valid on this date (${c.start_date || 'no start'} – ${c.end_date || 'no end'})` : undefined}
                           value={hours[key] || ''}
                           onChange={(e) => setCell(c.id, d, e.target.value)}
                         />
